@@ -1,6 +1,22 @@
 <!doctype html>
 <html>
 <head>
+  <style>
+  .confirm {
+    border: 1px solid #ddd;
+    background: #fcfcfc;
+    padding: 14px;
+    margin: 12px 0;
+    border-radius: 6px;
+  }
+  .confirm h4 { margin: 0 0 8px 0; }
+  .confirm-table { border-collapse: collapse; width: 100%; max-width: 900px; }
+  .confirm-table td, .confirm-table th { padding: 8px 10px; border: 1px solid #eee; text-align: left; }
+  .confirm-actions { margin-top: 8px; }
+  .small-btn { display:inline-block; padding:6px 10px; border:1px solid #bbb; background:#fff; cursor:pointer; border-radius:4px; margin-right:8px; }
+  pre.json-box { background:#f5f5f5; padding:10px; border:1px solid #ddd; max-height:280px; overflow:auto; }
+</style>
+
   <meta charset="utf-8" />
   <title>Module1 - Data Ingestion Demo</title>
   <style>
@@ -123,6 +139,136 @@ form.addEventListener('submit', async (e) => {
     responseBox.textContent = 'Network error: ' + err.message;
   }
 });
+</script>
+<script>
+(function(){
+  const form = document.getElementById('ingestForm');
+  const responseBox = document.getElementById('responseBox');
+
+  function createConfirmHtml(data) {
+    // pick core values safely
+    const client = data.client || {};
+    const dossier = data.dossier || {};
+    const createdAt = client.createdAt || dossier.createdAt || data.savedAt || '';
+    const clientId = client.clientId || '';
+    const dossierId = dossier.dossierId || '';
+
+    return `
+      <div class="confirm">
+        <h4>Saved successfully</h4>
+        <table class="confirm-table" role="presentation">
+          <tr><th>Client ID</th><td><code id="clientIdCode">${escapeHtml(clientId)}</code></td></tr>
+          <tr><th>Client Name</th><td>${escapeHtml(client.clientName || '')}</td></tr>
+          <tr><th>Primary Contact</th><td>${escapeHtml(client.primaryContact || '')}</td></tr>
+          <tr><th>Industry</th><td>${escapeHtml(client.industry || '')}</td></tr>
+          <tr><th>Dossier ID</th><td>${escapeHtml(dossierId)}</td></tr>
+          <tr><th>Version Status</th><td>${escapeHtml(dossier.versionStatus || '')}</td></tr>
+          <tr><th>Created At</th><td>${escapeHtml(createdAt)}</td></tr>
+        </table>
+
+        <div class="confirm-actions">
+          <button id="copyIdBtn" class="small-btn">Copy Client ID</button>
+          <button id="downloadJsonBtn" class="small-btn">Download JSON</button>
+          <button id="toggleRawBtn" class="small-btn">Show raw JSON</button>
+        </div>
+
+        <div id="rawJsonArea" style="display:none; margin-top:10px;">
+          <pre class="json-box" id="rawJsonPre">${escapeHtml(JSON.stringify(data, null, 2))}</pre>
+        </div>
+      </div>
+    `;
+  }
+
+  function escapeHtml(s) {
+    if (!s) return '';
+    return String(s)
+      .replaceAll('&','&amp;')
+      .replaceAll('<','&lt;')
+      .replaceAll('>','&gt;')
+      .replaceAll('"','&quot;')
+      .replaceAll("'", '&#39;');
+  }
+
+  function downloadObjectAsJson(obj, filename) {
+    const dataStr = "data:application/json;charset=utf-8," + encodeURIComponent(JSON.stringify(obj, null, 2));
+    const dlAnchor = document.createElement('a');
+    dlAnchor.setAttribute("href", dataStr);
+    dlAnchor.setAttribute("download", filename);
+    document.body.appendChild(dlAnchor);
+    dlAnchor.click();
+    dlAnchor.remove();
+  }
+
+  // form submit handler
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    // gather values - adjust ids if yours differ
+    const data = {
+      clientName: document.getElementById('clientName')?.value || '',
+      primaryContact: document.getElementById('primaryContact')?.value || '',
+      industry: document.getElementById('industry')?.value || '',
+      companyOverview: document.getElementById('companyOverview')?.value || '',
+      clientStatus: document.getElementById('clientStatus')?.value || '',
+      dossierVersionStatus: document.getElementById('dossierVersionStatus')?.value || ''
+    };
+
+    responseBox.textContent = 'Sending...';
+
+    try {
+      const res = await fetch('/api/ingest', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data)
+      });
+      const json = await res.json();
+
+      if (!res.ok) {
+        responseBox.innerHTML = `<div style="color: #a00">Error: ${escapeHtml(json.message || 'Server error')}</div>`;
+        return;
+      }
+
+      // show confirmation UI
+      responseBox.innerHTML = createConfirmHtml(json.data);
+
+      // hook up buttons
+      const copyBtn = document.getElementById('copyIdBtn');
+      const rawToggleBtn = document.getElementById('toggleRawBtn');
+      const downloadBtn = document.getElementById('downloadJsonBtn');
+      const rawArea = document.getElementById('rawJsonArea');
+      const rawPre = document.getElementById('rawJsonPre');
+      const clientIdCode = document.getElementById('clientIdCode');
+
+      copyBtn.addEventListener('click', () => {
+        const text = clientIdCode?.textContent || '';
+        if (!text) return;
+        navigator.clipboard?.writeText(text).then(() => {
+          copyBtn.textContent = 'Copied ✓';
+          setTimeout(()=> copyBtn.textContent = 'Copy Client ID', 1500);
+        }).catch(()=> {
+          alert('Copy failed — select and copy manually.');
+        });
+      });
+
+      rawToggleBtn.addEventListener('click', () => {
+        if (rawArea.style.display === 'none') {
+          rawArea.style.display = 'block';
+          rawToggleBtn.textContent = 'Hide raw JSON';
+        } else {
+          rawArea.style.display = 'none';
+          rawToggleBtn.textContent = 'Show raw JSON';
+        }
+      });
+
+      downloadBtn.addEventListener('click', () => {
+        const cid = json.data.client?.clientId || 'submission';
+        downloadObjectAsJson(json.data, `${cid}.json`);
+      });
+
+    } catch (err) {
+      responseBox.innerHTML = `<div style="color: #a00">Network error: ${escapeHtml(err.message || '')}</div>`;
+    }
+  });
+})();
 </script>
 
 </body>
